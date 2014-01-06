@@ -1,7 +1,7 @@
 #pragma once
 /*
- *      Copyright (C) 2005-2012 Team XBMC
- *      http://www.xbmc.org
+ *      Copyright (C) 2005-2013 Team XBMC
+ *      http://xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -22,17 +22,23 @@
 #include "system.h"
 #ifdef HAS_FILESYSTEM_SFTP
 #include "SFTP.h"
-#include "IDirectory.h"
+#include "utils/StdString.h"
+#include "threads/CriticalSection.h"
 
-namespace XFILE
+#include <map>
+
+class CURL;
+
+class CSFTPSessionManager
 {
-  class CSFTPDirectory : public IDirectory
-  {
-  public:
-    CSFTPDirectory(void);
-    virtual ~CSFTPDirectory(void);
-    virtual bool GetDirectory(const CStdString& strPath, CFileItemList &items);
-    virtual bool Exists(const char* strPath);
-  };
-}
+public:
+  static CSFTPSessionPtr CreateSession(const CURL &url);
+  static CSFTPSessionPtr CreateSession(const CStdString &host, unsigned int port, const CStdString &username, const CStdString &password);
+  static void ClearOutIdleSessions();
+  static void DisconnectAllSessions();
+private:
+  static CCriticalSection m_critSect;
+  static std::map<CStdString, CSFTPSessionPtr> sessions;
+};
+
 #endif
