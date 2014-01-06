@@ -22,17 +22,23 @@
 #include "system.h"
 #ifdef HAS_FILESYSTEM_SFTP
 #include "SFTP.h"
-#include "IDirectory.h"
+#include "utils/StdString.h"
+#include "threads/CriticalSection.h"
 
-namespace XFILE
+#include <map>
+
+class CURL;
+
+class CSFTPSessionManager
 {
-  class CSFTPDirectory : public IDirectory
-  {
-  public:
-    CSFTPDirectory(void);
-    virtual ~CSFTPDirectory(void);
-    virtual bool GetDirectory(const CStdString& strPath, CFileItemList &items);
-    virtual bool Exists(const char* strPath);
-  };
-}
+public:
+  static CSFTPSessionPtr CreateSession(const CURL &url);
+  static CSFTPSessionPtr CreateSession(const CStdString &host, unsigned int port, const CStdString &username, const CStdString &password);
+  static void ClearOutIdleSessions();
+  static void DisconnectAllSessions();
+private:
+  static CCriticalSection m_critSect;
+  static std::map<CStdString, CSFTPSessionPtr> sessions;
+};
+
 #endif
