@@ -18,12 +18,12 @@
  *
  */
 
-#include "threads/SystemClock.h"
 #include "SFTPFile.h"
 #ifdef HAS_FILESYSTEM_SFTP
 #include "SFTPSession.h"
 #include "SFTPSessionManager.h"
 #include "threads/SingleLock.h"
+#include "threads/SystemClock.h"
 #include "utils/log.h"
 #include "utils/TimeUtils.h"
 #include "utils/Variant.h"
@@ -104,7 +104,8 @@ unsigned int CSFTPFile::Read(void* lpBuf, int64_t uiBufSize)
 {
   if (m_session && m_sftp_handle)
   {
-    int rc = m_session->Read(m_sftp_handle, lpBuf, (size_t)uiBufSize);
+    int rc = m_session->Read(m_sftp_handle, reinterpret_cast<char*>(lpBuf),
+                             (size_t)uiBufSize);
 
     if (rc >= 0)
       return rc;
