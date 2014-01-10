@@ -122,7 +122,7 @@ sftp_file CSFTPSession::CreateFileHande(const CStdString &file)
     sftp_file handle = sftp_open(m_sftp_session, CorrectPath(file).c_str(), O_RDONLY, 0);
     if (handle)
     {
-      sftp_file_set_blocking(handle);
+      sftp_file_set_nonblocking(handle);
       return handle;
     }
     else
@@ -306,6 +306,7 @@ int CSFTPSession::InitRead(sftp_file handle, size_t length,
 {
   CSingleLock lock(m_critSect);
   m_LastActive = XbmcThreads::SystemClockMillis();
+  int added = 0;
   while (!queue.full())
   {
     int rc = sftp_async_read_begin(handle, length);
@@ -315,8 +316,11 @@ int CSFTPSession::InitRead(sftp_file handle, size_t length,
       return -1;
     }
 
+    ++added;
     queue.push(rc);
   }
+
+  CLog::Log(LOGDEBUG, "SFTPSession::InitRead: Filled read queue with %i entries", added);
 
   return 0;
 }
@@ -325,7 +329,10 @@ int CSFTPSession::Read(sftp_file handle, int id, void *buffer, size_t length)
 {
   CSingleLock lock(m_critSect);
   m_LastActive = XbmcThreads::SystemClockMillis();
-  return sftp_async_read(handle, buffer, length, id);
+  int rc;
+  while ((rc = sftp_async_read(handle, buffer, length, id)) == SSH_AGAIN);
+  CLog::Log(LOGDEBUG, "SFTPSession::Read: Got %i bytes from id %i", rc, id);
+  return rc;
 }
 
 int64_t CSFTPSession::GetPosition(sftp_file handle)

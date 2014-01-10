@@ -22,11 +22,11 @@
 #include "system.h"
 #ifdef HAS_FILESYSTEM_SFTP
 #include "SFTP.h"
+#include "SFTPFile.h"
 #include "utils/StdString.h"
 #include "threads/CriticalSection.h"
 
 class CFileItemList;
-template <class T> class CBufferQueue;
 
 class CSFTPSession
 {
