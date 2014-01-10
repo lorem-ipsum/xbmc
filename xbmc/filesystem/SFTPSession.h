@@ -26,7 +26,7 @@
 #include "threads/CriticalSection.h"
 
 class CFileItemList;
-template <class T> class CBufferList;
+template <class T> class CBufferQueue;
 
 class CSFTPSession
 {

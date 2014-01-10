@@ -24,6 +24,7 @@
 #include "threads/SingleLock.h"
 #include "threads/SystemClock.h"
 #include "utils/log.h"
+#include "utils/BufferQueue.h"
 #include "utils/TimeUtils.h"
 #include "utils/Variant.h"
 #include "Util.h"
