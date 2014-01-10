@@ -46,6 +46,7 @@ namespace XFILE
   private:
     CStdString m_file;
     CSFTPSessionPtr m_session;
+    CBufferQueue<int> m_queue;
     sftp_file m_sftp_handle;
   };
 }

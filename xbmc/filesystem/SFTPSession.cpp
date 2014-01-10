@@ -300,11 +300,31 @@ int CSFTPSession::Seek(sftp_file handle, uint64_t position)
   return sftp_seek64(handle, position);
 }
 
-int CSFTPSession::Read(sftp_file handle, void *buffer, size_t length)
+int CSFTPSession::InitRead(sftp_file handle, size_t length,
+                           CBufferQueue<int>& queue)
 {
   CSingleLock lock(m_critSect);
   m_LastActive = XbmcThreads::SystemClockMillis();
-  return sftp_read(handle, buffer, length);
+  while (!queue.full())
+  {
+    int rc = sftp_async_read_begin(handle, length);
+    if (rc < 0)
+    {
+      CLog::Log(LOGERROR, "CSFTPSession::InitRead: async read begin failed");
+      return -1;
+    }
+
+    queue.push(rc);
+  }
+
+  return 0;
+}
+
+int CSFTPSession::Read(sftp_file handle, int id, void *buffer, size_t length)
+{
+  CSingleLock lock(m_critSect);
+  m_LastActive = XbmcThreads::SystemClockMillis();
+  return sftp_async_read(handle, buffer, length, id);
 }
 
 int64_t CSFTPSession::GetPosition(sftp_file handle)
