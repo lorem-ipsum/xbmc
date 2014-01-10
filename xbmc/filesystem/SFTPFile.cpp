@@ -42,8 +42,10 @@ using namespace std;
 CSFTPFile::CSFTPFile()
   : m_file(),
     m_session(),
-    m_queue(20),
-    m_sftp_handle()
+    m_sftp_handle(),
+    m_queue(2),
+    m_buf(),
+    m_buf_end(m_buf)
 {
   m_sftp_handle = NULL;
 }
@@ -106,18 +108,107 @@ int64_t CSFTPFile::Seek(int64_t iFilePosition, int iWhence)
 
 unsigned int CSFTPFile::Read(void* lpBuf, int64_t uiBufSize)
 {
+  CLog::Log(LOGDEBUG, "SFTPFILE::Read: %li bytes requested", uiBufSize);
   if (m_session && m_sftp_handle)
   {
-    if (m_session->InitRead(m_sftp_handle, (size_t)uiBufSize, m_queue))
+    // request data from server in 32KB portions
+    if (m_session->InitRead(m_sftp_handle, REQUEST_SIZE, m_queue))
       return 0;
 
-    int rc = m_session->Read(m_sftp_handle, m_queue.value_pop(),
-                             lpBuf, (size_t)uiBufSize);
+    int cached = m_buf_end - m_buf;
 
-    if (rc >= 0)
-      return rc;
-    else
+
+    // maybe cache just matches request size
+    if (cached == uiBufSize)
+    {
+      memcpy(lpBuf, m_buf, uiBufSize);
+      m_buf_end = m_buf;
+      CLog::Log(LOGDEBUG, "SFTPFile::Read: matching cache size");
+      return uiBufSize;
+    }
+
+    // we have more data in cache than requested
+    if (cached > uiBufSize)
+    {
+      memcpy(lpBuf, m_buf, uiBufSize);
+      // check if remaining memory is more than requested data
+      // if yes data would overlap on copy (requires memmove)
+      if (uiBufSize >= (cached / 2))
+        memcpy(m_buf, m_buf + uiBufSize, cached - uiBufSize);
+      else
+        memmove(m_buf, m_buf + uiBufSize, cached - uiBufSize);
+      m_buf_end -= uiBufSize;
+      CLog::Log(LOGDEBUG, "SFTPFile::Read: %i bytes in cache, %li requested",
+                cached, uiBufSize);
+      return uiBufSize;
+    }
+
+    char *position = static_cast<char*>(lpBuf);
+    int64_t requested = uiBufSize;
+
+    // if cached data is available first answer from cache
+    if (cached > 0)
+    {
+      memcpy(lpBuf, m_buf, cached);
+      m_buf_end = m_buf;
+      position += cached;
+      requested -= cached;
+      CLog::Log(LOGDEBUG, "SFTPFile::Read: added %i bytes from cache", cached);
+    }
+
+    // we fill with full request blocks. If block size doesn't match
+    // requested size we don't care, receiver has to deal with it (and ask
+    // again), to prevent unnecessary cache usage
+    int i;
+    for (i = 0; i < (requested / REQUEST_SIZE); ++i)
+    {
+      if (i >= m_queue.size()) break;
+      int rc = m_session->Read(m_sftp_handle, m_queue.value_pop(),
+                               position, REQUEST_SIZE);
+      if (rc < 0)
+      {
+        CLog::Log(LOGERROR, "SFTPFile: Failed to read %i", rc);
+        return 0;
+      }
+
+      if (rc == 0)
+        return cached + i * REQUEST_SIZE;
+
+      CLog::Log(LOGDEBUG, "SFTPFile::Read: added %i bytes from session",
+                REQUEST_SIZE);
+      position += REQUEST_SIZE;
+    }
+
+    // if there's data we don't use the cache but just return less data
+    // than requested
+    if (cached || i)
+    {
+      CLog::Log(LOGDEBUG, "SFTPFile::Read: returning %i bytes",
+                cached + i * REQUEST_SIZE);
+      return cached + i * REQUEST_SIZE;
+    }
+
+    CLog::Log(LOGDEBUG, "SFTPFile::Read: Reading into cache");
+    // no data was in cache and less than a request size was requested
+    int rc = m_session->Read(m_sftp_handle, m_queue.value_pop(),
+                             m_buf, REQUEST_SIZE);
+    if (rc < 0)
+    {
       CLog::Log(LOGERROR, "SFTPFile: Failed to read %i", rc);
+      return 0;
+    }
+
+    memcpy(lpBuf, m_buf, uiBufSize);
+    // check if we can use memcpy or must use memmove
+    if (uiBufSize * 2 < REQUEST_SIZE)
+      memmove(m_buf, m_buf + uiBufSize, REQUEST_SIZE - uiBufSize);
+    else
+      memcpy(m_buf, m_buf + uiBufSize, REQUEST_SIZE - uiBufSize);
+    m_buf_end = m_buf + REQUEST_SIZE - uiBufSize;
+
+    CLog::Log(LOGDEBUG, "SFTPFile::Read: Returning %li bytes read into cache",
+              uiBufSize);
+    return uiBufSize;
   }
   else
     CLog::Log(LOGERROR, "SFTPFile: Can't read without a filehandle");

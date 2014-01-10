@@ -158,6 +158,7 @@ vtbdecoder_disabled="== VTBDecoder support manually disabled. =="
 openmax_disabled="== OpenMax support manually disabled. =="
 openmax_not_found="== Could not find libnvomx. OpenMax support disabled. =="
 ssh_not_found="== Could not find libssh. =="
+ssh_threads_not_found="== Could not find libssh threads. =="
 ssh_disabled="== SSH SFTP disabled. =="
 librtmp_not_found="== Could not find libRTMP. RTMP support disabled. =="
 librtmp_disabled="== RTMP support disabled. =="
@@ -1505,6 +1506,8 @@ if test "x$use_ssh" = "xno"; then
   use_libssh="no"
 else
   AC_CHECK_LIB([ssh], [sftp_tell64],, AC_MSG_ERROR($ssh_not_found))
+  AC_CHECK_LIB([ssh_threads], [ssh_threads_get_pthread],,
+	       AC_MSG_ERROR($ssh_threads_not_found))
   AC_DEFINE([HAVE_LIBSSH], [1], [Whether to use libSSH library.])
 fi
 

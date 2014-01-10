@@ -26,6 +26,9 @@
 #include "threads/CriticalSection.h"
 #include "utils/BufferQueue.h"
 
+// server request size
+#define REQUEST_SIZE (32 * 1024)
+
 namespace XFILE
 {
   class CSFTPFile : public IFile
@@ -44,11 +47,14 @@ namespace XFILE
     virtual int64_t GetPosition();
     virtual int     GetChunkSize() {return 1;};
     virtual int     IoControl(EIoControl request, void* param);
+
   private:
     CStdString m_file;
     CSFTPSessionPtr m_session;
-    CBufferQueue<int> m_queue;
     sftp_file m_sftp_handle;
+    CBufferQueue<int> m_queue;
+    char m_buf[REQUEST_SIZE];
+    char *m_buf_end;
   };
 }
 #endif

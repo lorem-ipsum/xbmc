@@ -27,6 +27,7 @@
 #include "URL.h"
 #include <fcntl.h>
 #include <sstream>
+#include <libssh/callbacks.h>
 
 #ifdef TARGET_WINDOWS
 #pragma comment(lib, "ssh.lib")
@@ -36,6 +37,43 @@ using namespace std;
 
 CCriticalSection CSFTPSessionManager::m_critSect;
 map<CStdString, CSFTPSessionPtr> CSFTPSessionManager::sessions;
+
+namespace
+{
+
+class SFTPInitHelper
+{
+public:
+  static int Initialize();
+
+private:
+  SFTPInitHelper();
+  ~SFTPInitHelper();
+  SFTPInitHelper(const SFTPInitHelper&);
+  SFTPInitHelper& operator=(const SFTPInitHelper&);
+
+  int rc;
+};
+
+SFTPInitHelper::SFTPInitHelper()
+{
+  ssh_threads_set_callbacks(ssh_threads_get_pthread());
+  rc = ssh_init();
+}
+
+SFTPInitHelper::~SFTPInitHelper()
+{
+  ssh_finalize();
+}
+
+int
+SFTPInitHelper::Initialize()
+{
+  static SFTPInitHelper helper;
+  return helper.rc;
+}
+
+} // anonymous namespace
 
 CSFTPSessionPtr CSFTPSessionManager::CreateSession(const CURL &url)
 {
@@ -53,6 +91,8 @@ CSFTPSessionPtr CSFTPSessionManager::CreateSession(const CStdString &host, unsig
   stringstream itoa;
   itoa << port;
   CStdString portstr = itoa.str();
+
+  SFTPInitHelper::Initialize();
 
   CSingleLock lock(m_critSect);
   CStdString key = username + ":" + password + "@" + host + ":" + portstr;
