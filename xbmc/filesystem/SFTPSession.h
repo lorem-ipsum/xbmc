@@ -26,6 +26,7 @@
 #include "threads/CriticalSection.h"
 
 class CFileItemList;
+template <class T> class CBufferList;
 
 class CSFTPSession
 {
@@ -40,7 +41,8 @@ public:
   bool FileExists(const char *path);
   int Stat(const char *path, struct __stat64* buffer);
   int Seek(sftp_file handle, uint64_t position);
-  int Read(sftp_file handle, void *buffer, size_t length);
+  int InitRead(sftp_file handle, size_t length, CBufferQueue<int>& queue);
+  int Read(sftp_file handle, int id, void *buffer, size_t length);
   int64_t GetPosition(sftp_file handle);
   bool IsIdle();
 private:
