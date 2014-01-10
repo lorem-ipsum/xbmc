@@ -47,6 +47,7 @@ public:
 
   size_t size() const;
   bool empty() const;
+  bool full() const;
 
   // not in standard proposal
   void resize(size_t new_max);
@@ -63,7 +64,7 @@ private:
 
 template <typename T>
 inline
-CBufferQueue::CBufferQueue(size_t max)
+CBufferQueue<T>::CBufferQueue(size_t max)
   : m_lock(),
     m_deque(),
     m_max(max)
@@ -111,7 +112,7 @@ inline
 bool
 CBufferQueue<T>::full() const
 {
-  return size() >= full;
+  return size() >= m_max;
 }
 
 template <typename T>
@@ -120,5 +121,5 @@ void
 CBufferQueue<T>::resize(size_t new_max)
 {
   CSingleLock lock(m_lock);
-  max = new_max;
+  m_max = new_max;
 }

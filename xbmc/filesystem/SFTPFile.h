@@ -24,6 +24,7 @@
 #include "SFTP.h"
 #include "IFile.h"
 #include "threads/CriticalSection.h"
+#include "utils/BufferQueue.h"
 
 namespace XFILE
 {

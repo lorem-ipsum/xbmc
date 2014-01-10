@@ -41,11 +41,11 @@ using namespace std;
 
 CSFTPFile::CSFTPFile()
   : m_file(),
-    m_session(NULL),
+    m_session(),
     m_queue(20),
-    m_sftp_handle(NULL)
-
+    m_sftp_handle()
 {
+  m_sftp_handle = NULL;
 }
 
 CSFTPFile::~CSFTPFile()
@@ -108,7 +108,7 @@ unsigned int CSFTPFile::Read(void* lpBuf, int64_t uiBufSize)
 {
   if (m_session && m_sftp_handle)
   {
-    if (m_session->InitRead(m_sftp_handle, size_t length, m_queue))
+    if (m_session->InitRead(m_sftp_handle, (size_t)uiBufSize, m_queue))
       return 0;
 
     int rc = m_session->Read(m_sftp_handle, m_queue.value_pop(),
