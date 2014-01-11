@@ -22,6 +22,7 @@
 #ifdef HAS_FILESYSTEM_SFTP
 #include "SFTPSession.h"
 #include "threads/SingleLock.h"
+#include "utils/log.h"
 #include "utils/Variant.h"
 #include "Util.h"
 #include "URL.h"
@@ -59,6 +60,7 @@ SFTPInitHelper::SFTPInitHelper()
 {
   ssh_threads_set_callbacks(ssh_threads_get_pthread());
   rc = ssh_init();
+  CLog::Log(LOGINFO, "SFTP: Initialization done with return value %i", rc);
 }
 
 SFTPInitHelper::~SFTPInitHelper()
@@ -85,6 +87,18 @@ CSFTPSessionPtr CSFTPSessionManager::CreateSession(const CURL &url)
   return CSFTPSessionManager::CreateSession(hostname, port, username, password);
 }
 
+CSFTPSessionPtr CSFTPSessionManager::CreateUniqueSession(const CURL &url)
+{
+  string username = url.GetUserName().c_str();
+  string password = url.GetPassWord().c_str();
+  string hostname = url.GetHostName().c_str();
+  unsigned int port = url.HasPort() ? url.GetPort() : 22;
+
+  return CSFTPSessionManager::CreateUniqueSession
+    (hostname, port, username, password);
+}
+
+
 CSFTPSessionPtr CSFTPSessionManager::CreateSession(const CStdString &host, unsigned int port, const CStdString &username, const CStdString &password)
 {
   // Convert port number to string
@@ -95,7 +109,7 @@ CSFTPSessionPtr CSFTPSessionManager::CreateSession(const CStdString &host, unsig
   SFTPInitHelper::Initialize();
 
   CSingleLock lock(m_critSect);
-  CStdString key = username + ":" + password + "@" + host + ":" + portstr;
+  CStdString key = username + "@" + host + ":" + portstr;
   CSFTPSessionPtr ptr = sessions[key];
   if (ptr == NULL)
   {
@@ -104,6 +118,21 @@ CSFTPSessionPtr CSFTPSessionManager::CreateSession(const CStdString &host, unsig
   }
 
   return ptr;
+}
+
+CSFTPSessionPtr CSFTPSessionManager::CreateUniqueSession
+  (const CStdString &host, unsigned int port, const CStdString &username,
+   const CStdString &password)
+{
+  // Convert port number to string
+  stringstream itoa;
+  itoa << port;
+  CStdString portstr = itoa.str();
+
+  SFTPInitHelper::Initialize();
+
+  CSingleLock lock(m_critSect);
+  return CSFTPSessionPtr(new CSFTPSession(host, port, username, password));
 }
 
 void CSFTPSessionManager::ClearOutIdleSessions()

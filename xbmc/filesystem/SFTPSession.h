@@ -42,7 +42,8 @@ public:
   int Stat(const char *path, struct __stat64* buffer);
   int Seek(sftp_file handle, uint64_t position);
   int InitRead(sftp_file handle, size_t length, CBufferQueue<int>& queue);
-  int Read(sftp_file handle, int id, void *buffer, size_t length);
+  int Read(sftp_file handle, CBufferQueue<int>& queue,
+           void *buffer, size_t length);
   int64_t GetPosition(sftp_file handle);
   bool IsIdle();
 private:
@@ -53,7 +54,6 @@ private:
   CCriticalSection m_critSect;
 
   bool m_connected;
-  int m_sock;
   ssh_session  m_session;
   sftp_session m_sftp_session;
   int m_LastActive;

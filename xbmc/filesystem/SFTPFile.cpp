@@ -31,6 +31,7 @@
 #include "URL.h"
 #include <fcntl.h>
 #include <sstream>
+#include <unistd.h>
 
 #ifdef TARGET_WINDOWS
 #pragma comment(lib, "ssh.lib")
@@ -39,11 +40,14 @@
 using namespace XFILE;
 using namespace std;
 
+#define QUEUE_COUNT 20
+
 CSFTPFile::CSFTPFile()
   : m_file(),
     m_session(),
+    m_read_session(),
     m_sftp_handle(),
-    m_queue(2),
+    m_queue(QUEUE_COUNT),
     m_buf(),
     m_buf_end(m_buf)
 {
@@ -57,17 +61,24 @@ CSFTPFile::~CSFTPFile()
 
 bool CSFTPFile::Open(const CURL& url)
 {
+  CSingleLock lock(m_lock);
   m_session = CSFTPSessionManager::CreateSession(url);
-  if (m_session)
+  if (!m_session)
+  {
+    CLog::Log(LOGERROR, "SFTPFile: Failed to allocate read session");
+    return false;
+  }
+  m_read_session = CSFTPSessionManager::CreateUniqueSession(url);
+  if (m_read_session)
   {
     m_file = url.GetFileName().c_str();
-    m_sftp_handle = m_session->CreateFileHande(m_file);
+    m_sftp_handle = m_read_session->CreateFileHande(m_file);
 
     return (m_sftp_handle != NULL);
   }
   else
   {
-    CLog::Log(LOGERROR, "SFTPFile: Failed to allocate session");
+    CLog::Log(LOGERROR, "SFTPFile: Failed to allocate read session");
     return false;
   }
 }
@@ -76,16 +87,19 @@ void CSFTPFile::Close()
 {
   if (m_session && m_sftp_handle)
   {
-    m_session->CloseFileHandle(m_sftp_handle);
+    CSingleLock lock(m_lock);
+    m_read_session->CloseFileHandle(m_sftp_handle);
     m_sftp_handle = NULL;
+    m_read_session = CSFTPSessionPtr();
     m_session = CSFTPSessionPtr();
   }
 }
 
 int64_t CSFTPFile::Seek(int64_t iFilePosition, int iWhence)
 {
-  if (m_session && m_sftp_handle)
+  if (m_read_session && m_sftp_handle)
   {
+    CSingleLock lock(m_lock);
     uint64_t position = 0;
     if (iWhence == SEEK_SET)
       position = iFilePosition;
@@ -95,7 +109,10 @@ int64_t CSFTPFile::Seek(int64_t iFilePosition, int iWhence)
       position = GetLength() + iFilePosition;
 
     if (m_session->Seek(m_sftp_handle, position) == 0)
+    {
+      m_queue.clear();
       return GetPosition();
+    }
     else
       return -1;
   }
@@ -109,10 +126,11 @@ int64_t CSFTPFile::Seek(int64_t iFilePosition, int iWhence)
 unsigned int CSFTPFile::Read(void* lpBuf, int64_t uiBufSize)
 {
   CLog::Log(LOGDEBUG, "SFTPFILE::Read: %li bytes requested", uiBufSize);
-  if (m_session && m_sftp_handle)
+  if (m_read_session && m_sftp_handle)
   {
+    CSingleLock lock(m_lock);
     // request data from server in 32KB portions
-    if (m_session->InitRead(m_sftp_handle, REQUEST_SIZE, m_queue))
+    if (m_read_session->InitRead(m_sftp_handle, REQUEST_SIZE, m_queue))
       return 0;
 
     int cached = m_buf_end - m_buf;
@@ -162,9 +180,8 @@ unsigned int CSFTPFile::Read(void* lpBuf, int64_t uiBufSize)
     int i;
     for (i = 0; i < (requested / REQUEST_SIZE); ++i)
     {
-      if (i >= m_queue.size()) break;
-      int rc = m_session->Read(m_sftp_handle, m_queue.value_pop(),
-                               position, REQUEST_SIZE);
+      int rc = m_read_session->Read(m_sftp_handle, m_queue,
+                                    position, REQUEST_SIZE);
       if (rc < 0)
       {
         CLog::Log(LOGERROR, "SFTPFile: Failed to read %i", rc);
@@ -177,6 +194,14 @@ unsigned int CSFTPFile::Read(void* lpBuf, int64_t uiBufSize)
       CLog::Log(LOGDEBUG, "SFTPFile::Read: added %i bytes from session",
                 REQUEST_SIZE);
       position += REQUEST_SIZE;
+
+      if (((i + 1) % (QUEUE_COUNT / 2)) == 0)
+      {
+        CLog::Log(LOGDEBUG, "SFTPFile::Read: Requesting more data");
+        if (m_session->InitRead(m_sftp_handle, REQUEST_SIZE, m_queue))
+          return 0;
+      }
+      usleep(500);
     }
 
     // if there's data we don't use the cache but just return less data
@@ -190,7 +215,7 @@ unsigned int CSFTPFile::Read(void* lpBuf, int64_t uiBufSize)
 
     CLog::Log(LOGDEBUG, "SFTPFile::Read: Reading into cache");
     // no data was in cache and less than a request size was requested
-    int rc = m_session->Read(m_sftp_handle, m_queue.value_pop(),
+    int rc = m_session->Read(m_sftp_handle, m_queue,
                              m_buf, REQUEST_SIZE);
     if (rc < 0)
     {
@@ -263,8 +288,11 @@ int64_t CSFTPFile::GetLength()
 
 int64_t CSFTPFile::GetPosition()
 {
-  if (m_session && m_sftp_handle)
-    return m_session->GetPosition(m_sftp_handle);
+  if (m_read_session && m_sftp_handle)
+  {
+    CSingleLock lock(m_lock);
+    return m_read_session->GetPosition(m_sftp_handle);
+  }
 
   CLog::Log(LOGERROR, "SFTPFile: Can't get position without a filehandle for '%s'", m_file.c_str());
   return 0;
