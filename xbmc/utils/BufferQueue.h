@@ -44,6 +44,7 @@ public:
 
   T value_pop();
   void push(const T&);
+  void clear();
 
   size_t size() const;
   bool empty() const;
@@ -89,6 +90,15 @@ CBufferQueue<T>::push(const T& value)
 {
   CSingleLock lock(m_lock);
   m_deque.push_back(value);
+}
+
+template <typename T>
+inline
+void
+CBufferQueue<T>::clear()
+{
+  CSingleLock lock(m_lock);
+  m_deque.clear();
 }
 
 template <typename T>

@@ -51,10 +51,12 @@ namespace XFILE
   private:
     CStdString m_file;
     CSFTPSessionPtr m_session;
+    CSFTPSessionPtr m_read_session;
     sftp_file m_sftp_handle;
     CBufferQueue<int> m_queue;
     char m_buf[REQUEST_SIZE];
     char *m_buf_end;
+    CCriticalSection m_lock;
   };
 }
 #endif
