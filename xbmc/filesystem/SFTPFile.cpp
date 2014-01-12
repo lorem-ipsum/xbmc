@@ -31,7 +31,6 @@
 #include "URL.h"
 #include <fcntl.h>
 #include <sstream>
-#include <unistd.h>
 
 #ifdef TARGET_WINDOWS
 #pragma comment(lib, "ssh.lib")
@@ -49,13 +48,16 @@ CSFTPFile::CSFTPFile()
     m_sftp_handle(),
     m_queue(QUEUE_COUNT),
     m_buf(),
-    m_buf_end(m_buf)
+    m_buf_end(m_buf),
+    m_lock(),
+    m_eof(false)
 {
   m_sftp_handle = NULL;
 }
 
 CSFTPFile::~CSFTPFile()
 {
+  DumpQueue();
   Close();
 }
 
@@ -108,9 +110,13 @@ int64_t CSFTPFile::Seek(int64_t iFilePosition, int iWhence)
     else if (iWhence == SEEK_END)
       position = GetLength() + iFilePosition;
 
+    // remove old requests before seeking. If done after seeking it
+    // crashes libssh
+    DumpQueue();
+
     if (m_session->Seek(m_sftp_handle, position) == 0)
     {
-      m_queue.clear();
+      m_eof = false;
       return GetPosition();
     }
     else
@@ -128,13 +134,15 @@ unsigned int CSFTPFile::Read(void* lpBuf, int64_t uiBufSize)
   CLog::Log(LOGDEBUG, "SFTPFILE::Read: %li bytes requested", uiBufSize);
   if (m_read_session && m_sftp_handle)
   {
+    if (m_eof)
+      return 0;
+
     CSingleLock lock(m_lock);
     // request data from server in 32KB portions
-    if (m_read_session->InitRead(m_sftp_handle, REQUEST_SIZE, m_queue))
+    if (FillQueue())
       return 0;
 
     int cached = m_buf_end - m_buf;
-
 
     // maybe cache just matches request size
     if (cached == uiBufSize)
@@ -188,20 +196,25 @@ unsigned int CSFTPFile::Read(void* lpBuf, int64_t uiBufSize)
         return 0;
       }
 
-      if (rc == 0)
-        return cached + i * REQUEST_SIZE;
+      // if we get less than REQUEST_SIZE we're at EOF
+      if (rc != REQUEST_SIZE)
+      {
+        CLog::Log(LOGINFO, "CSFTPFile::Read: At EOF");
+        m_eof = true;
+        return cached + rc + i * REQUEST_SIZE;
+      }
 
       CLog::Log(LOGDEBUG, "SFTPFile::Read: added %i bytes from session",
                 REQUEST_SIZE);
       position += REQUEST_SIZE;
 
+      // fill the request queue every (m_queue.max() / 2) iterations
       if (((i + 1) % (QUEUE_COUNT / 2)) == 0)
       {
         CLog::Log(LOGDEBUG, "SFTPFile::Read: Requesting more data");
-        if (m_session->InitRead(m_sftp_handle, REQUEST_SIZE, m_queue))
+        if (FillQueue())
           return 0;
       }
-      usleep(500);
     }
 
     // if there's data we don't use the cache but just return less data
@@ -223,13 +236,28 @@ unsigned int CSFTPFile::Read(void* lpBuf, int64_t uiBufSize)
       return 0;
     }
 
+    if (rc != REQUEST_SIZE)
+    {
+      CLog::Log(LOGINFO, "CSFTPFile::Read: At EOF");
+      m_eof = true;
+    }
+
+    // check if we got less data than requested
+    if (rc <= uiBufSize)
+    {
+      memcpy(lpBuf, m_buf, rc);
+      m_buf_end = m_buf;
+      return rc;
+    }
+
     memcpy(lpBuf, m_buf, uiBufSize);
     // check if we can use memcpy or must use memmove
-    if (uiBufSize * 2 < REQUEST_SIZE)
-      memmove(m_buf, m_buf + uiBufSize, REQUEST_SIZE - uiBufSize);
+    if (uiBufSize * 2 < rc)
+      memmove(m_buf, m_buf + uiBufSize, rc - uiBufSize);
     else
-      memcpy(m_buf, m_buf + uiBufSize, REQUEST_SIZE - uiBufSize);
-    m_buf_end = m_buf + REQUEST_SIZE - uiBufSize;
+      memcpy(m_buf, m_buf + uiBufSize, rc - uiBufSize);
+
+    m_buf_end = m_buf + rc - uiBufSize;
 
     CLog::Log(LOGDEBUG, "SFTPFile::Read: Returning %li bytes read into cache",
               uiBufSize);
@@ -286,12 +314,20 @@ int64_t CSFTPFile::GetLength()
   }
 }
 
+/**
+ * @warning if requests in the queue are shorter than expected (due to
+ * EOF), this position is wrong.
+ */
 int64_t CSFTPFile::GetPosition()
 {
   if (m_read_session && m_sftp_handle)
   {
     CSingleLock lock(m_lock);
-    return m_read_session->GetPosition(m_sftp_handle);
+    // this postion is after all the requests in the queue are handled
+    int pos = m_read_session->GetPosition(m_sftp_handle);
+    // subtract number of request to get a (hopefully) correct position
+    pos -= REQUEST_SIZE * m_queue.size();
+    return pos;
   }
 
   CLog::Log(LOGERROR, "SFTPFile: Can't get position without a filehandle for '%s'", m_file.c_str());
@@ -304,6 +340,57 @@ int CSFTPFile::IoControl(EIoControl request, void* param)
     return 1;
 
   return -1;
+}
+
+/**
+ * @brief clear the buffer queue
+ *
+ * libssh_async_read_begin allocates memory. To prevent memory leaks it's
+ * not possible to only delete the handles. This function dumps the data
+ * into a buffer, which it throws away.
+ *
+ * Be aware, that the requests made already advanced the file position.
+ * Dumping the queue and restarting at the same position will lead to
+ * missing data.
+ */
+void
+CSFTPFile::DumpQueue()
+{
+  if (!m_read_session || !m_sftp_handle)
+    return;
+
+  char buf[REQUEST_SIZE];
+  while (! m_queue.empty())
+  {
+    int rc = m_read_session->Read(m_sftp_handle, m_queue, buf, REQUEST_SIZE);
+    if (rc < 0)
+      CLog::Log(LOGERROR, "CSFTPFile::DumpQueue: Read error while dumping %i",
+                rc);
+  }
+}
+
+/**
+ * @brief fills the request queue
+ *
+ * this function fills the queue up to the maximum with requests until
+ * m_eof is set, in which case it does nothing
+ *
+ * @return 0 if successfull (even on eof), < 0 if error
+ */
+int
+CSFTPFile::FillQueue()
+{
+  if (m_eof)
+    return 0;
+
+  int rc = m_read_session->InitRead(m_sftp_handle, REQUEST_SIZE, m_queue);
+  if (rc < 0)
+  {
+    CLog::Log(LOGERROR, "CSFTPFile::FillQueue: InitRead failed with %i", rc);
+    return -1;
+  }
+
+  return 0;
 }
 
 #endif

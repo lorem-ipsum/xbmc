@@ -48,7 +48,6 @@
 
 using namespace std;
 
-
 static CStdString CorrectPath(const CStdString path)
 {
   if (path == "~")
