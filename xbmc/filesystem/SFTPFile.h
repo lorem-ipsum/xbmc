@@ -45,7 +45,7 @@ namespace XFILE
     virtual int Stat(struct __stat64* buffer);
     virtual int64_t GetLength();
     virtual int64_t GetPosition();
-    virtual int     GetChunkSize() {return 1;};
+    virtual int     GetChunkSize() { return REQUEST_SIZE; }
     virtual int     IoControl(EIoControl request, void* param);
 
   private:
