@@ -49,6 +49,9 @@ namespace XFILE
     virtual int     IoControl(EIoControl request, void* param);
 
   private:
+    void DumpQueue();
+    int FillQueue();
+
     CStdString m_file;
     CSFTPSessionPtr m_session;
     CSFTPSessionPtr m_read_session;
@@ -57,6 +60,7 @@ namespace XFILE
     char m_buf[REQUEST_SIZE];
     char *m_buf_end;
     CCriticalSection m_lock;
+    bool m_eof;
   };
 }
 #endif
