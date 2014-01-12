@@ -114,7 +114,7 @@ int64_t CSFTPFile::Seek(int64_t iFilePosition, int iWhence)
     // crashes libssh
     DumpQueue();
 
-    if (m_session->Seek(m_sftp_handle, position) == 0)
+    if (m_read_session->Seek(m_sftp_handle, position) == 0)
     {
       m_eof = false;
       return GetPosition();
