@@ -31,6 +31,7 @@
 #include <libssh/callbacks.h>
 
 #ifdef TARGET_WINDOWS
+#include <windows.h>
 #pragma comment(lib, "ssh.lib")
 #endif
 
@@ -41,6 +42,32 @@ map<CStdString, CSFTPSessionPtr> CSFTPSessionManager::sessions;
 
 namespace
 {
+
+#ifdef TARGET_WINDOWS
+
+template <class T>
+struct wrap_mutex_fun
+{
+  int operator()(void** mutex)
+  {
+    T(reinterpret_cast<CRITICAL_SECTION*>(*mutex));
+    return 0;
+  }
+}
+
+struct ssh_threads_callbacks_struct
+get_windows_callbacks()
+{
+  struct ssh_threads_callbacks_struct callbacks;
+
+  callbacks.mutex_init = wrap_mutex_fun<InitializeCriticalSection>;
+  callbacks.mutex_destroy = wrap_mutex_fun<DeleteCriticalSection>;
+  callbacks.mutex_lock = wrap_mutex_fun<EnterCriticalSection>;
+  callbacks.mutex_unlock = wrap_mutex_fun<LeaveCriticalSection>;
+  callbacks.thread_id = GetCurrentProcessId;
+}
+
+#endif // TARGET_WINDOWS
 
 class SFTPInitHelper
 {
@@ -58,7 +85,13 @@ private:
 
 SFTPInitHelper::SFTPInitHelper()
 {
+#ifdef TARGET_POSIX
   ssh_threads_set_callbacks(ssh_threads_get_pthread());
+#elif (defined TARGET_WINDOW)
+  ssh_threads_set_callbacks(get_windows_callbacks());
+#else
+# error "SFTPInitHelper: unsupported threading model"
+#endif
   rc = ssh_init();
   CLog::Log(LOGINFO, "SFTP: Initialization done with return value %i", rc);
 }
