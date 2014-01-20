@@ -139,9 +139,8 @@ CSFTPSessionPtr CSFTPSessionManager::CreateSession(const CStdString &host, unsig
   itoa << port;
   CStdString portstr = itoa.str();
 
-  SFTPInitHelper::Initialize();
-
   CSingleLock lock(m_critSect);
+  SFTPInitHelper::Initialize();
   CStdString key = username + "@" + host + ":" + portstr;
   CSFTPSessionPtr ptr = sessions[key];
   if (ptr == NULL)
@@ -162,9 +161,8 @@ CSFTPSessionPtr CSFTPSessionManager::CreateUniqueSession
   itoa << port;
   CStdString portstr = itoa.str();
 
-  SFTPInitHelper::Initialize();
-
   CSingleLock lock(m_critSect);
+  SFTPInitHelper::Initialize();
   return CSFTPSessionPtr(new CSFTPSession(host, port, username, password));
 }
 
