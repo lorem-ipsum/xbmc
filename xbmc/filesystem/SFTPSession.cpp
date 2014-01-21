@@ -416,7 +416,8 @@ bool CSFTPSession::Connect(const CStdString &host, unsigned int port, const CStd
     return false;
   }
 
-  ssh_options_set(m_session, SSH_OPTIONS_LOG_VERBOSITY, 0);
+  int verbosity = SSH_LOG_NONE;
+  ssh_options_set(m_session, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
   ssh_options_set(m_session, SSH_OPTIONS_TIMEOUT, &timeout);  
 #else
   SSH_OPTIONS* options = ssh_options_new();
