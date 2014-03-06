@@ -459,7 +459,6 @@ bool CSFTPSession::Connect(const CStdString &host, unsigned int port, const CStd
     return false;
   }
 
-
   int noAuth = SSH_AUTH_DENIED;
   if ((noAuth = ssh_userauth_none(m_session, NULL)) == SSH_AUTH_ERROR)
   {
@@ -474,12 +473,11 @@ bool CSFTPSession::Connect(const CStdString &host, unsigned int port, const CStd
 #ifndef _WIN32
   if (method & SSH_AUTH_METHOD_PUBLICKEY)
   {
-    publicKeyAuth = ssh_userauth_agent(m_session, username.c_str());
+    publicKeyAuth = ssh_userauth_agent(m_session, NULL);
     if (publicKeyAuth == SSH_AUTH_ERROR)
     {
       CLog::Log(LOGERROR, "SFTPSession: Failed to authenticate via publickey '%s'",
                 ssh_get_error(m_session));
-      return false;
     }
   }
 #endif // def _WIN32
