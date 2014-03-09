@@ -87,14 +87,16 @@ bool CSFTPFile::Open(const CURL& url)
 
 void CSFTPFile::Close()
 {
-  if (m_session && m_sftp_handle)
+  if (m_read_session && m_sftp_handle)
   {
     CSingleLock lock(m_lock);
     m_read_session->CloseFileHandle(m_sftp_handle);
     m_sftp_handle = NULL;
     m_read_session = CSFTPSessionPtr();
-    m_session = CSFTPSessionPtr();
   }
+
+  if (m_session)
+    m_session = CSFTPSessionPtr();
 }
 
 int64_t CSFTPFile::Seek(int64_t iFilePosition, int iWhence)
