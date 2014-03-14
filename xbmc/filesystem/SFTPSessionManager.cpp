@@ -21,12 +21,14 @@
 #include "SFTPSessionManager.h"
 #ifdef HAS_FILESYSTEM_SFTP
 #include "SFTPSession.h"
+#include "threads/CriticalSection.h"
 #include "threads/SingleLock.h"
 #include "utils/log.h"
 #include "utils/Variant.h"
 #include "Util.h"
 #include "URL.h"
 #include <fcntl.h>
+#include <map>
 #include <sstream>
 #include <libssh/callbacks.h>
 
@@ -36,9 +38,6 @@
 #endif
 
 using namespace std;
-
-CCriticalSection CSFTPSessionManager::m_critSect;
-map<CStdString, CSFTPSessionPtr> CSFTPSessionManager::sessions;
 
 namespace
 {
@@ -110,29 +109,83 @@ SFTPInitHelper::Initialize()
 
 } // anonymous namespace
 
+class CSFTPSessionManagerImpl
+{
+public:
+  CSFTPSessionPtr CreateSession(const CStdString &host,
+                                unsigned int port,
+                                const CStdString &username,
+                                const CStdString &password);
+  CSFTPSessionPtr CreateUniqueSession(const CStdString &host,
+                                      unsigned int port,
+                                      const CStdString &username,
+                                      const CStdString &password);
+
+  void ReturnUniqueSession(CSFTPSessionPtr);
+  void ClearOutIdleSessions();
+  void DisconnectAllSessions();
+
+private:
+  typedef std::map<CStdString, CSFTPSessionPtr>      shared_map;
+  typedef std::multimap<CStdString, CSFTPSessionPtr> unique_map;
+
+  CCriticalSection m_critSect;
+  shared_map shared_sessions;
+  unique_map unique_sessions;
+};
+
+CSFTPSessionManager&
+CSFTPSessionManager::GetInstance()
+{
+  static CSFTPSessionManager manager;
+  return manager;
+}
+
+CSFTPSessionManager::CSFTPSessionManager()
+  : pimpl(new CSFTPSessionManagerImpl())
+{
+}
+
+CSFTPSessionManager::~CSFTPSessionManager()
+{
+  if (pimpl)
+    delete pimpl;
+}
+
 CSFTPSessionPtr CSFTPSessionManager::CreateSession(const CURL &url)
 {
-  string username = url.GetUserName().c_str();
-  string password = url.GetPassWord().c_str();
-  string hostname = url.GetHostName().c_str();
+  CStdString username = url.GetUserName();
+  CStdString password = url.GetPassWord();
+  CStdString hostname = url.GetHostName();
   unsigned int port = url.HasPort() ? url.GetPort() : 22;
 
-  return CSFTPSessionManager::CreateSession(hostname, port, username, password);
+  return CreateSession(hostname, port, username, password);
 }
 
 CSFTPSessionPtr CSFTPSessionManager::CreateUniqueSession(const CURL &url)
 {
-  string username = url.GetUserName().c_str();
-  string password = url.GetPassWord().c_str();
-  string hostname = url.GetHostName().c_str();
+  CStdString username = url.GetUserName();
+  CStdString password = url.GetPassWord();
+  CStdString hostname = url.GetHostName();
   unsigned int port = url.HasPort() ? url.GetPort() : 22;
 
-  return CSFTPSessionManager::CreateUniqueSession
-    (hostname, port, username, password);
+  return CreateUniqueSession(hostname, port, username, password);
 }
 
 
-CSFTPSessionPtr CSFTPSessionManager::CreateSession(const CStdString &host, unsigned int port, const CStdString &username, const CStdString &password)
+CSFTPSessionPtr
+CSFTPSessionManager::CreateSession(const CStdString &host, unsigned int port,
+                                   const CStdString &username,
+                                   const CStdString &password)
+{
+  return pimpl->CreateSession(host, port, username, password);
+}
+
+CSFTPSessionPtr
+CSFTPSessionManagerImpl::CreateSession(const CStdString &host,
+                                       unsigned int port,
+                                       const CStdString &username,
+                                       const CStdString &password)
 {
   // Convert port number to string
   stringstream itoa;
@@ -141,20 +194,31 @@ CSFTPSessionPtr CSFTPSessionManager::CreateSession(const CStdString &host, unsig
 
   CSingleLock lock(m_critSect);
   SFTPInitHelper::Initialize();
-  CStdString key = username + "@" + host + ":" + portstr;
-  CSFTPSessionPtr ptr = sessions[key];
+  CStdString key = CSFTPSession::MakeHostString(host, port, username);
+  CSFTPSessionPtr ptr = shared_sessions[key];
   if (ptr == NULL)
   {
     ptr = CSFTPSessionPtr(new CSFTPSession(host, port, username, password));
-    sessions[key] = ptr;
+    shared_sessions[key] = ptr;
   }
 
   return ptr;
 }
 
-CSFTPSessionPtr CSFTPSessionManager::CreateUniqueSession
-  (const CStdString &host, unsigned int port, const CStdString &username,
-   const CStdString &password)
+CSFTPSessionPtr
+CSFTPSessionManager::CreateUniqueSession(const CStdString &host,
+                                         unsigned int port,
+                                         const CStdString &username,
+                                         const CStdString &password)
+{
+  return pimpl->CreateUniqueSession(host, port, username, password);
+}
+
+CSFTPSessionPtr
+CSFTPSessionManagerImpl::CreateUniqueSession(const CStdString &host,
+                                             unsigned int port,
+                                             const CStdString &username,
+                                             const CStdString &password)
 {
   // Convert port number to string
   stringstream itoa;
@@ -163,25 +227,63 @@ CSFTPSessionPtr CSFTPSessionManager::CreateUniqueSession
 
   CSingleLock lock(m_critSect);
   SFTPInitHelper::Initialize();
-  return CSFTPSessionPtr(new CSFTPSession(host, port, username, password));
+
+  unique_map::iterator it =
+    unique_sessions.find(CSFTPSession::MakeHostString(host, port, username));
+
+  if (it == unique_sessions.end())
+    return CSFTPSessionPtr(new CSFTPSession(host, port, username, password));
+
+  CSFTPSessionPtr ret = it->second;
+  unique_sessions.erase(it);
+  return ret;
+}
+
+void CSFTPSessionManager::ReturnUniqueSession(CSFTPSessionPtr ptr)
+{
+  pimpl->ReturnUniqueSession(ptr);
+}
+
+void
+CSFTPSessionManagerImpl::ReturnUniqueSession(CSFTPSessionPtr ptr)
+{
+  CSingleLock lock(m_critSect);
+
+  unique_map::value_type session(ptr->GetHostString(), ptr);
+  unique_sessions.insert(session);
 }
 
 void CSFTPSessionManager::ClearOutIdleSessions()
 {
+  pimpl->ClearOutIdleSessions();
+}
+
+void
+CSFTPSessionManagerImpl::ClearOutIdleSessions()
+{
   CSingleLock lock(m_critSect);
-  for(map<CStdString, CSFTPSessionPtr>::iterator iter = sessions.begin(); iter != sessions.end();)
-  {
-    if (iter->second->IsIdle())
-      sessions.erase(iter++);
-    else
-      iter++;
-  }
+  for (shared_map::iterator it = shared_sessions.begin();
+       it != shared_sessions.end(); ++it)
+    if (it->second->IsIdle())
+      shared_sessions.erase(it);
+
+  for (unique_map::iterator it = unique_sessions.begin();
+       it != unique_sessions.end(); ++it)
+    if (it->second->IsIdle())
+      unique_sessions.erase(it);
 }
 
 void CSFTPSessionManager::DisconnectAllSessions()
 {
+  return pimpl->DisconnectAllSessions();
+}
+
+void
+CSFTPSessionManagerImpl::DisconnectAllSessions()
+{
   CSingleLock lock(m_critSect);
-  sessions.clear();
+  unique_sessions.clear();
+  shared_sessions.clear();
 }
 
 #endif

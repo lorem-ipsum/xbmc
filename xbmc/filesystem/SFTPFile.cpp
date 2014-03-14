@@ -64,13 +64,14 @@ CSFTPFile::~CSFTPFile()
 bool CSFTPFile::Open(const CURL& url)
 {
   CSingleLock lock(m_lock);
-  m_session = CSFTPSessionManager::CreateSession(url);
+  CSFTPSessionManager& manager = CSFTPSessionManager::GetInstance();
+  m_session = manager.CreateSession(url);
   if (!m_session)
   {
     CLog::Log(LOGERROR, "SFTPFile: Failed to allocate read session");
     return false;
   }
-  m_read_session = CSFTPSessionManager::CreateUniqueSession(url);
+  m_read_session = manager.CreateUniqueSession(url);
   if (m_read_session)
   {
     m_file = url.GetFileName().c_str();
@@ -92,6 +93,7 @@ void CSFTPFile::Close()
     CSingleLock lock(m_lock);
     m_read_session->CloseFileHandle(m_sftp_handle);
     m_sftp_handle = NULL;
+    CSFTPSessionManager::GetInstance().ReturnUniqueSession(m_read_session);
     m_read_session = CSFTPSessionPtr();
   }
 
@@ -273,7 +275,8 @@ unsigned int CSFTPFile::Read(void* lpBuf, int64_t uiBufSize)
 
 bool CSFTPFile::Exists(const CURL& url)
 {
-  CSFTPSessionPtr session = CSFTPSessionManager::CreateSession(url);
+  CSFTPSessionPtr session =
+    CSFTPSessionManager::GetInstance().CreateSession(url);
   if (session)
     return session->FileExists(url.GetFileName().c_str());
   else
@@ -285,7 +288,8 @@ bool CSFTPFile::Exists(const CURL& url)
 
 int CSFTPFile::Stat(const CURL& url, struct __stat64* buffer)
 {
-  CSFTPSessionPtr session = CSFTPSessionManager::CreateSession(url);
+  CSFTPSessionPtr session =
+    CSFTPSessionManager::GetInstance().CreateSession(url);
   if (session)
     return session->Stat(url.GetFileName().c_str(), buffer);
   else

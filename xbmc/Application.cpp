@@ -3508,7 +3508,7 @@ void CApplication::Stop(int exitCode)
 #endif
 
 #ifdef HAS_FILESYSTEM_SFTP
-    CSFTPSessionManager::DisconnectAllSessions();
+    CSFTPSessionManager::GetInstance().DisconnectAllSessions();
 #endif
 
     CLog::Log(LOGNOTICE, "unload skin");
@@ -5114,7 +5114,7 @@ void CApplication::ProcessSlow()
 #endif
 
 #ifdef HAS_FILESYSTEM_SFTP
-  CSFTPSessionManager::ClearOutIdleSessions();
+  CSFTPSessionManager::GetInstance().ClearOutIdleSessions();
 #endif
 
   g_mediaManager.ProcessEvents();
@@ -5801,6 +5801,6 @@ void CApplication::CloseNetworkShares()
 #endif
   
 #ifdef HAS_FILESYSTEM_SFTP
-  CSFTPSessionManager::DisconnectAllSessions();
+  CSFTPSessionManager::GetInstance().DisconnectAllSessions();
 #endif
 }

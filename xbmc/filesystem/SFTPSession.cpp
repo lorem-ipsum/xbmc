@@ -96,7 +96,15 @@ static const char * SFTPErrorText(int sftp_error)
   return "Unknown error code";
 }
 
-CSFTPSession::CSFTPSession(const CStdString &host, unsigned int port, const CStdString &username, const CStdString &password)
+CSFTPSession::CSFTPSession(const CStdString &host, unsigned int port,
+                           const CStdString &username,
+                           const CStdString &password)
+  : m_critSect(),
+    m_hoststring(MakeHostString(host, port, username)),
+    m_connected(false),
+    m_session(NULL),
+    m_sftp_session(NULL),
+    m_LastActive(0)
 {
   CLog::Log(LOGINFO, "SFTPSession: Creating new session on host '%s:%d' with user '%s'", host.c_str(), port, username.c_str());
   CSingleLock lock(m_critSect);
@@ -561,6 +569,17 @@ bool CSFTPSession::GetItemPermissions(const char *path, uint32_t &permissions)
     }
   }
   return gotPermissions;
+}
+
+CStdString
+CSFTPSession::MakeHostString(const CStdString& host, unsigned int port,
+                             const CStdString& username)
+{
+  std::ostringstream itoa;
+  itoa << port;
+  CStdString p = itoa.str();
+
+  return username + "@" + host + ":" + p;
 }
 
 #endif

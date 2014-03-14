@@ -46,6 +46,11 @@ public:
            void *buffer, size_t length);
   int64_t GetPosition(sftp_file handle);
   bool IsIdle();
+
+  const CStdString& GetHostString() const { return m_hoststring; }
+  static CStdString MakeHostString(const CStdString& hostname, unsigned int port,
+                                   const CStdString& username);
+
 private:
   bool VerifyKnownHost(ssh_session session);
   bool Connect(const CStdString &host, unsigned int port, const CStdString &username, const CStdString &password);
@@ -53,6 +58,7 @@ private:
   bool GetItemPermissions(const char *path, uint32_t &permissions);
   CCriticalSection m_critSect;
 
+  CStdString m_hoststring;
   bool m_connected;
   ssh_session  m_session;
   sftp_session m_sftp_session;

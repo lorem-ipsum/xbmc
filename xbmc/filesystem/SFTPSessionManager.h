@@ -23,27 +23,36 @@
 #ifdef HAS_FILESYSTEM_SFTP
 #include "SFTP.h"
 #include "utils/StdString.h"
-#include "threads/CriticalSection.h"
-
-#include <map>
 
 class CURL;
+class CSFTPSessionManagerImpl;
 
 class CSFTPSessionManager
 {
 public:
-  static CSFTPSessionPtr CreateSession(const CURL &url);
-  static CSFTPSessionPtr CreateSession(const CStdString &host, unsigned int port, const CStdString &username, const CStdString &password);
-  static CSFTPSessionPtr CreateUniqueSession(const CURL &url);
-  static CSFTPSessionPtr CreateUniqueSession(const CStdString &host,
-                                             unsigned int port,
-                                             const CStdString &username,
-                                             const CStdString &password);
-  static void ClearOutIdleSessions();
-  static void DisconnectAllSessions();
+  static CSFTPSessionManager& GetInstance();
+
+  CSFTPSessionPtr CreateSession(const CURL &url);
+  CSFTPSessionPtr CreateSession(const CStdString &host,
+                                unsigned int port,
+                                const CStdString &username,
+                                const CStdString &password);
+  CSFTPSessionPtr CreateUniqueSession(const CURL &url);
+  CSFTPSessionPtr CreateUniqueSession(const CStdString &host,
+                                      unsigned int port,
+                                      const CStdString &username,
+                                      const CStdString &password);
+  void ReturnUniqueSession(CSFTPSessionPtr);
+
+  void ClearOutIdleSessions();
+  void DisconnectAllSessions();
 private:
-  static CCriticalSection m_critSect;
-  static std::map<CStdString, CSFTPSessionPtr> sessions;
+  CSFTPSessionManager();
+  CSFTPSessionManager(const CSFTPSessionManager&);
+  CSFTPSessionManager& operator=(const CSFTPSessionManager&);
+  ~CSFTPSessionManager();
+
+  CSFTPSessionManagerImpl* pimpl;
 };
 
 #endif
