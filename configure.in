@@ -1454,8 +1454,17 @@ if test "x$use_ssh" = "xno"; then
   AC_MSG_NOTICE($ssh_disabled)
   use_libssh="no"
 else
-  AC_CHECK_LIB([ssh], [sftp_tell64],, AC_MSG_ERROR($ssh_not_found))
-  AC_DEFINE([HAVE_LIBSSH], [1], [Whether to use libSSH library.])
+  PKG_CHECK_MODULES([LIBSSH], [libssh libssh_threads],
+		    [use_libssh="yes"], [use_libssh="no"])
+  if test "x$use_ssh" = "xyes" && test "x$use_libssh" = "xno" ; then
+    AC_MSG_ERROR($missing_library)
+  fi
+
+  if test "x$use_libssh" = "xyes" ; then
+    AC_DEFINE([HAVE_LIBSSH], [1], [Wether to use libSSH library.])
+    INCLUDES="$INCLUDES $LIBSSH_CFLAGS"
+    LIBS="$LIBS $LIBSSH_LIBS"
+  fi
 fi
 
 # libcurl
